@@ -1,6 +1,0 @@
-{
-  "name": "nexora-engineering", "version": "0.1.0", "private": true, "type": "module",
-  "description": "Object-centric plant engineering workbench in vanilla JavaScript with native WebGPU rendering",
-  "scripts": { "test": "node --test tests/core.test.js", "build": "node build.mjs", "start": "python3 -m http.server 8080" },
-  "engines": { "node": ">=20" }
-}
