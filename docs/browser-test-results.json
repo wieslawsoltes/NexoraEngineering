@@ -1,10 +1,10 @@
 {
-  "environment": "Chromium 144.0.7559.96",
-  "mode": "injected standalone / opaque origin",
+  "environment": "Chromium 152.0.7977.0",
+  "mode": "hosted",
   "diagnostics": {
     "renderer": "canvas",
-    "rendererReason": "WebGPU is unavailable in this browser/context",
-    "secureContext": false,
+    "rendererReason": "Canvas renderer requested",
+    "secureContext": true,
     "drawCalls": 16,
     "frameCount": 57,
     "objects": 87
