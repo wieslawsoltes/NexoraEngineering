@@ -1,0 +1,139 @@
+{
+  "environment": "Chromium 144.0.7559.96",
+  "mode": "injected standalone / opaque origin",
+  "diagnostics": {
+    "renderer": "canvas",
+    "rendererReason": "WebGPU is unavailable in this browser/context",
+    "secureContext": false,
+    "drawCalls": 16,
+    "frameCount": 57,
+    "objects": 87
+  },
+  "results": [
+    {
+      "name": "Application boots with three documents and an intact graph",
+      "status": "passed"
+    },
+    {
+      "name": "Renderer initializes honestly",
+      "status": "passed"
+    },
+    {
+      "name": "Inspector edits update the shared object",
+      "status": "passed"
+    },
+    {
+      "name": "Undo restores the prior engineering attribute",
+      "status": "passed"
+    },
+    {
+      "name": "Canvas drag moves equipment and commits a transaction",
+      "status": "passed"
+    },
+    {
+      "name": "Live line route follows the moved pump",
+      "status": "passed"
+    },
+    {
+      "name": "Symbol library creates a real engineering object",
+      "status": "passed"
+    },
+    {
+      "name": "Port-to-port routing stores semantic endpoint references",
+      "status": "passed"
+    },
+    {
+      "name": "Keyboard rotation changes the model",
+      "status": "passed"
+    },
+    {
+      "name": "Register double-click enters inline editing",
+      "status": "passed"
+    },
+    {
+      "name": "Inline register edit updates the engineering graph",
+      "status": "passed"
+    },
+    {
+      "name": "Command palette resolves and selects a tagged object",
+      "status": "passed"
+    },
+    {
+      "name": "Document tab switches the active engineering scene",
+      "status": "passed"
+    },
+    {
+      "name": "Electrical document uses actual cable graph",
+      "status": "passed"
+    },
+    {
+      "name": "Full object register is available",
+      "status": "passed"
+    },
+    {
+      "name": "Document manager lists all drawings",
+      "status": "passed"
+    },
+    {
+      "name": "Layer filtering changes scene, not graph",
+      "status": "passed"
+    },
+    {
+      "name": "Validation displays the known incomplete range",
+      "status": "passed"
+    },
+    {
+      "name": "Validation issue locates its object",
+      "status": "passed"
+    },
+    {
+      "name": "Revision dialog captures a persistent graph snapshot",
+      "status": "passed"
+    },
+    {
+      "name": "New drawing dialog creates a real document",
+      "status": "passed"
+    },
+    {
+      "name": "Document creation is undoable",
+      "status": "passed"
+    },
+    {
+      "name": "Clipboard clones nodes and their internal connection",
+      "status": "passed"
+    },
+    {
+      "name": "export-json produces a download",
+      "status": "passed"
+    },
+    {
+      "name": "export-svg produces a download",
+      "status": "passed"
+    },
+    {
+      "name": "export-csv produces a download",
+      "status": "passed"
+    },
+    {
+      "name": "export-dxf produces a download",
+      "status": "passed"
+    },
+    {
+      "name": "export-png produces a download",
+      "status": "passed"
+    },
+    {
+      "name": "Responsive layout 1280\u00d7800",
+      "status": "passed"
+    },
+    {
+      "name": "Responsive layout 1920\u00d71080",
+      "status": "passed"
+    },
+    {
+      "name": "No uncaught browser exceptions",
+      "status": "passed"
+    }
+  ],
+  "pageErrors": []
+}

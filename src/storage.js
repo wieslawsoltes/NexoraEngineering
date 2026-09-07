@@ -1,0 +1,7 @@
+/** Ordered, atomic IndexedDB writes. Browser storage is not a substitute for downloaded backups. */
+export class ProjectStorage {
+  constructor(){this.queue=Promise.resolve();this.mode='indexeddb';this.ready=this.open();}
+  open(){return new Promise(resolve=>{try{const req=indexedDB.open('nexora-engineering',1);req.onupgradeneeded=()=>req.result.createObjectStore('projects');req.onsuccess=()=>{const db=req.result;db.onversionchange=()=>db.close();resolve(db);};req.onerror=()=>{this.mode='localStorage';resolve(null);};req.onblocked=()=>{this.mode='localStorage';resolve(null);};}catch{this.mode='localStorage';resolve(null);}});}
+  async load(){const db=await this.ready;if(!db){try{return JSON.parse(localStorage.getItem('nexora-project')||'null');}catch{return null;}}return new Promise((resolve,reject)=>{const tx=db.transaction('projects','readonly'),r=tx.objectStore('projects').get('current');r.onsuccess=()=>resolve(r.result||null);r.onerror=()=>reject(r.error);});}
+  save(data){const snapshot=structuredClone(data);const next=this.queue.catch(()=>{}).then(async()=>{const db=await this.ready;if(!db){localStorage.setItem('nexora-project',JSON.stringify(snapshot));return;}await new Promise((resolve,reject)=>{const tx=db.transaction('projects','readwrite');tx.objectStore('projects').put(snapshot,'current');tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error('Storage transaction aborted'));});});this.queue=next;return next;}
+}
