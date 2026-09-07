@@ -1,0 +1,84 @@
+name: Import and verify Nexora source
+on:
+  push:
+    branches: [main]
+    paths: ['.bootstrap/**', '.github/workflows/import-source.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: initial-source-import
+  cancel-in-progress: false
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify and extract the original source archive
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path, PurePosixPath
+          import hashlib, io, tarfile
+          parts = [Path(f'.bootstrap/source.part{i:02d}') for i in range(7)]
+          data = b''.join(p.read_bytes() for p in parts)
+          expected = 'de12364d77bcec5ead3ff349127b2e423a4bd06eecdf859d3a8943699afad45a'
+          assert hashlib.sha256(data).hexdigest() == expected, 'Source archive checksum mismatch'
+          with tarfile.open(fileobj=io.BytesIO(data), mode='r:xz') as archive:
+              for member in archive.getmembers():
+                  path = PurePosixPath(member.name)
+                  assert member.isfile() and not path.is_absolute() and '..' not in path.parts
+                  assert path.parts[0] not in ('.git', '.github', '.bootstrap')
+                  target = Path(*path.parts)
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  target.write_bytes(archive.extractfile(member).read())
+          readme = Path('README.md')
+          text = readme.read_text()
+          text = text.replace('# Nexora Engineering\n', '# Nexora Engineering\n\n[Open the application](https://wieslawsoltes.github.io/NexoraEngineering/) · [Download standalone HTML](Nexora-Engineering.html)\n', 1)
+          readme.write_text(text)
+          print('Verified and restored original source, documentation, examples, and tests.')
+          PY
+      - name: Run kernel tests and build the standalone distribution
+        run: |
+          set -euo pipefail
+          npm test | tee docs/core-test-results.txt
+          npm run build
+          test -s dist/index.html
+          cmp dist/index.html Nexora-Engineering.html
+      - name: Commit the complete source and distribution
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm -r .bootstrap
+          git add .gitignore README.md build.mjs package.json index.html styles.css src tests examples docs dist Nexora-Engineering.html
+          git commit -m 'feat: add Nexora Engineering WebGPU workbench, examples, and tests'
+          git push origin HEAD:main
+      - name: Install browser test tools
+        run: |
+          python3 -m venv /tmp/nexora-test-env
+          /tmp/nexora-test-env/bin/pip install playwright==1.55.0
+          /tmp/nexora-test-env/bin/python -m playwright install --with-deps chromium
+      - name: Exercise the hosted standalone app and capture screenshots
+        run: |
+          set -euo pipefail
+          python3 -m http.server 8765 --bind 127.0.0.1 --directory dist >/tmp/nexora-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" || true' EXIT
+          for i in $(seq 1 30); do curl --fail --silent http://127.0.0.1:8765/ >/dev/null && break; sleep 1; done
+          NEXORA_URL='http://127.0.0.1:8765/?renderer=canvas' /tmp/nexora-test-env/bin/python tests/browser.test.py | tee docs/browser-test-log.txt
+      - name: Commit current browser verification and screenshots
+        run: |
+          git add docs
+          if ! git diff --cached --quiet; then
+            git commit -m 'test: record hosted Chromium checks and workbench screenshots'
+            git push origin HEAD:main
+          fi
+          echo '### Nexora Engineering source imported' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Kernel tests, deterministic standalone build, and hosted Chromium workflows passed.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Browser checks used Canvas fallback; hardware WebGPU is not claimed.' >> "$GITHUB_STEP_SUMMARY"
