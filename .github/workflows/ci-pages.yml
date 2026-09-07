@@ -1,0 +1,193 @@
+name: Test and publish Nexora Engineering
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nexora-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Kernel, build, and browser tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate JavaScript and run kernel tests
+        run: |
+          set -euo pipefail
+          for file in src/*.js tests/*.js build.mjs; do node --check "$file"; done
+          npm test | tee docs/core-test-results.txt
+      - name: Build the dependency-free standalone application
+        run: |
+          set -euo pipefail
+          npm run build
+          sha256sum dist/index.html > /tmp/nexora-build.sha256
+          npm run build
+          sha256sum --check /tmp/nexora-build.sha256
+          cmp dist/index.html Nexora-Engineering.html
+      - name: Install Chromium test tools
+        run: |
+          python3 -m venv /tmp/nexora-test-env
+          /tmp/nexora-test-env/bin/pip install playwright==1.55.0
+          /tmp/nexora-test-env/bin/python -m playwright install --with-deps chromium
+      - name: Test the hosted distribution with Canvas fallback
+        run: |
+          set -euo pipefail
+          python3 -m http.server 8765 --bind 127.0.0.1 --directory dist >/tmp/nexora-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" || true' EXIT
+          for i in $(seq 1 30); do curl --fail --silent http://127.0.0.1:8765/ >/dev/null && break; sleep 1; done
+          NEXORA_URL='http://127.0.0.1:8765/?renderer=canvas' /tmp/nexora-test-env/bin/python tests/browser.test.py | tee docs/browser-test-log.txt
+      - name: Stamp the tested distribution
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          site = Path('dist')
+          (site / '.nojekyll').touch()
+          manifest = {
+              'name': 'Nexora Engineering',
+              'version': json.loads(Path('package.json').read_text())['version'],
+              'source': os.environ['GITHUB_SHA'],
+              'repository': os.environ['GITHUB_REPOSITORY'],
+              'sha256': hashlib.sha256((site / 'index.html').read_bytes()).hexdigest(),
+          }
+          (site / 'build-info.json').write_text(json.dumps(manifest, indent=2) + '\n')
+          PY
+      - name: Retain test reports and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexora-test-results
+          path: |
+            docs/*test*
+            docs/*.png
+          retention-days: 14
+      - name: Upload tested distribution
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexora-site
+          path: dist
+          include-hidden-files: true
+          retention-days: 7
+      - name: Package GitHub Pages artifact
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          name: nexora-pages
+          path: dist
+
+  deploy:
+    name: Publish and verify GitHub Pages
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: https://wieslawsoltes.github.io/NexoraEngineering/
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/download-artifact@v4
+        with:
+          name: nexora-site
+          path: ${{ runner.temp }}/nexora-site
+      - name: Read the configured Pages publishing mode
+        id: pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/pages" > /tmp/nexora-pages.json
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          config = json.loads(Path('/tmp/nexora-pages.json').read_text())
+          mode = config.get('build_type', 'legacy')
+          source = config.get('source') or {}
+          print(json.dumps({'build_type': mode, 'source': source, 'url': config.get('html_url')}, indent=2))
+          if mode == 'legacy' and (source.get('branch') != 'gh-pages' or source.get('path') != '/'):
+              raise SystemExit('Set Settings > Pages to gh-pages / (root), or choose GitHub Actions as the source.')
+          if mode not in ('legacy', 'workflow'):
+              raise SystemExit('Unsupported Pages publishing mode: ' + str(mode))
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
+              out.write('mode=' + mode + '\n')
+          PY
+      - name: Update the generated gh-pages branch
+        if: steps.pages.outputs.mode == 'legacy'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin gh-pages
+          git worktree add --detach "$RUNNER_TEMP/nexora-pages-worktree" FETCH_HEAD
+          cp "$RUNNER_TEMP/nexora-site/index.html" "$RUNNER_TEMP/nexora-pages-worktree/index.html"
+          cp "$RUNNER_TEMP/nexora-site/build-info.json" "$RUNNER_TEMP/nexora-pages-worktree/build-info.json"
+          touch "$RUNNER_TEMP/nexora-pages-worktree/.nojekyll"
+          cd "$RUNNER_TEMP/nexora-pages-worktree"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html build-info.json .nojekyll
+          if ! git diff --cached --quiet; then
+            git commit -m "deploy: publish Nexora Engineering ${GITHUB_SHA:0:12}"
+            git push origin HEAD:gh-pages
+          fi
+          # GITHUB_TOKEN pushes do not automatically trigger a Pages build.
+          gh api --method POST "repos/$GITHUB_REPOSITORY/pages/builds" --jq '.status'
+      - name: Deploy the Pages artifact
+        if: steps.pages.outputs.mode == 'workflow'
+        uses: actions/deploy-pages@v4
+        with:
+          artifact_name: nexora-pages
+      - name: Verify the public HTTPS deployment against the tested artifact
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, time, urllib.request
+          from pathlib import Path
+          site = Path(os.environ['RUNNER_TEMP']) / 'nexora-site'
+          expected = json.loads((site / 'build-info.json').read_text())
+          url = 'https://wieslawsoltes.github.io/NexoraEngineering/'
+          error = None
+          for attempt in range(60):
+              query = '?verify=' + os.environ['GITHUB_RUN_ID'] + '-' + str(attempt)
+              try:
+                  with urllib.request.urlopen(url + 'build-info.json' + query, timeout=15) as response:
+                      actual = json.load(response)
+                  if actual.get('source') != expected['source']:
+                      raise ValueError('The CDN is still serving an earlier deployment')
+                  with urllib.request.urlopen(url + query, timeout=15) as response:
+                      assert response.status == 200
+                      html = response.read()
+                  if hashlib.sha256(html).hexdigest() != expected['sha256']:
+                      raise ValueError('Published HTML differs from the tested artifact')
+                  print('Verified HTTP 200, source commit, and exact HTML SHA-256:', url)
+                  with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+                      summary.write('## Nexora Engineering published\n\n' + url + '\n\n')
+                      summary.write('Source: `' + expected['source'] + '`\n\n')
+                      summary.write('Kernel tests, reproducible build, Chromium Canvas workflows, and public HTTPS content verification passed. Hardware WebGPU is not claimed by this CI run.\n')
+                  break
+              except Exception as failure:
+                  error = failure
+                  print('Deployment verification:', failure)
+                  time.sleep(5)
+          else:
+              raise SystemExit('Public deployment verification failed: ' + str(error))
+          PY
